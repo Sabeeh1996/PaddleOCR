@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-#from pyzbar.pyzbar import decode, ZBarSymbol
+from pyzbar.pyzbar import decode, ZBarSymbol
 import cv2
 import numpy as np
 from paddleocr import PaddleOCR
@@ -578,31 +578,31 @@ def correct_perspective(image_path, output_size=(400, 200)):
 
 
 
-#def detect_qr_barcode(image):
-#    """Detects QR codes and barcodes in an image, drawing bounding boxes without requiring 4 points."""
-#    decoded_objects = decode(image, symbols=[ZBarSymbol.QRCODE, ZBarSymbol.EAN13, ZBarSymbol.EAN8, ZBarSymbol.CODE128, ZBarSymbol.CODE39])
-#    detected_codes = []
+def detect_qr_barcode(image):
+    """Detects QR codes and barcodes in an image, drawing bounding boxes without requiring 4 points."""
+    decoded_objects = decode(image, symbols=[ZBarSymbol.QRCODE, ZBarSymbol.EAN13, ZBarSymbol.EAN8, ZBarSymbol.CODE128, ZBarSymbol.CODE39])
+    detected_codes = []
 
-#    for obj in decoded_objects:
-#        try:
-#            # Decode barcode data
- #           data = obj.data.decode('utf-8')
- #           detected_codes.append(data)
+    for obj in decoded_objects:
+        try:
+            # Decode barcode data
+            data = obj.data.decode('utf-8')
+            detected_codes.append(data)
             
             # Get bounding box
-  #          points = obj.polygon
-   #         if points:  # Ensure there are points detected
-    #            pts = np.array(points, dtype=np.int32)
-     #           x, y, w, h = cv2.boundingRect(pts)
-      #          cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            points = obj.polygon
+            if points:  # Ensure there are points detected
+                pts = np.array(points, dtype=np.int32)
+                x, y, w, h = cv2.boundingRect(pts)
+                cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
                 # Put decoded text on the image
-       #         cv2.putText(image, data, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(image, data, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                 
-       # except Exception as e:
-        #    print(f"Error decoding barcode: {e}")
+        except Exception as e:
+            print(f"Error decoding barcode: {e}")
 
-   # return detected_codes, image
+    return detected_codes, image
 
 
 def ocr_paddleocr(image):
@@ -629,7 +629,7 @@ def Image_Preview(Imgtype, image_path):
     if image is None:
         raise FileNotFoundError("Image not found")
     
-    #detected_codes, image_with_boxes = detect_qr_barcode(image)
+    detected_codes, image_with_boxes = detect_qr_barcode(image)
    # print(image)
     extracted_text = ocr_paddleocr(image)
     
