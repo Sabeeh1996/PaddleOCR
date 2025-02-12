@@ -20,7 +20,7 @@ async def process_image_endpoint(OCR_input_image: UploadFile = File(None)):
             raise HTTPException(status_code=400, detail="Invalid image file")
         barcodes = PaddleOCRFunc.ocr_paddleocr(image)
 
-        return {"barcodes": barcodes}
+        return barcodes
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")

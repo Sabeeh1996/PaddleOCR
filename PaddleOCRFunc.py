@@ -7,6 +7,8 @@ from pyzbar.pyzbar import decode, ZBarSymbol
 import cv2
 import numpy as np
 from paddleocr import PaddleOCR
+import re
+import json
 
 def get_barcode_area(image):
     # Convert to grayscale
@@ -605,7 +607,166 @@ def detect_qr_barcode(image):
     return detected_codes, image
 
 
+
+
+
+from fuzzywuzzy import process  # For fuzzy text matching
+
+def fuzzy_extract(text, keywords, threshold=80):
+    """
+    Fuzzy match a list of keywords in the given text.
+
+    Args:
+        text (str): The OCR extracted text.
+        keywords (list): Possible variations of the keyword.
+        threshold (int): Matching accuracy (0-100), higher is stricter.
+
+    Returns:
+        str or None: The best match found, or None if no match.
+    """
+    best_match, score = process.extractOne(text, keywords)
+    return best_match if score >= threshold else None
+
 def ocr_paddleocr(image):
+    """
+    Perform OCR on the given image using PaddleOCR and structure the extracted information into a JSON response.
+
+    Args:
+        image (numpy.ndarray): The input image.
+
+    Returns:
+        dict: JSON response containing structured fabric label information.
+    """
+    # Convert to grayscale if needed
+    if len(image.shape) == 3 and image.shape[2] == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image  # Already grayscale
+
+    # Initialize PaddleOCR
+    ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+    result = ocr.ocr(gray)
+
+    # Extract text from OCR result
+    extracted_text = []
+    if result:
+        for line in result:
+            for word_info in line:
+                if len(word_info) > 1:
+                    extracted_text.append(word_info[1][0])
+
+    # Join extracted text into a single string
+    extracted_text = " ".join(extracted_text).strip()
+
+    # Debugging: Print extracted text
+    print("Extracted Text:", extracted_text)
+
+
+from fuzzywuzzy import process
+
+def fuzzy_match(extracted_text, pattern_list, threshold=80):
+    """
+    Try regex first; if it fails, use fuzzy matching to find the best match.
+    
+    Args:
+        extracted_text (str): The full OCR-extracted text.
+        pattern_list (list): Possible keyword variations to search for.
+        threshold (int): Minimum match confidence (0-100).
+
+    Returns:
+        str or None: Best-matched text or None if not found.
+    """
+    # Try regex patterns first
+    for pattern in pattern_list:
+        match = re.search(pattern, extracted_text, re.IGNORECASE)
+        if match:
+            return match.group(1)  # Return the captured group
+
+    # If regex fails, apply fuzzy matching
+    best_match, score = process.extractOne(extracted_text, pattern_list)
+    return best_match if score >= threshold else None
+
+def ocr_paddleocr(image):
+    """
+    Perform OCR on the given image using PaddleOCR and extract structured fabric label information.
+
+    Args:
+        image (numpy.ndarray): The input image.
+
+    Returns:
+        str: JSON response containing structured fabric label information.
+    """
+    # Convert to grayscale if needed
+    if len(image.shape) == 3 and image.shape[2] == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image  # Already grayscale
+
+    # Initialize PaddleOCR
+    ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+    result = ocr.ocr(gray)
+
+    # Extract text from OCR result
+    extracted_text = []
+    if result:
+        for line in result:
+            for word_info in line:
+                if len(word_info) > 1:
+                    extracted_text.append(word_info[1][0])
+
+    # Convert list to single text string
+    extracted_text = " ".join(extracted_text).strip()
+
+    # Debugging: Print extracted text
+    print("Extracted Text:", extracted_text)
+
+    weave_patterns = [
+    "DO8BY LENO", "TWILL", "SATIN", "PLAIN WEAVE", "HERRINGBONE", "BASKET WEAVE"
+    ]
+
+    # **Regex + Fuzzy Matching for Each Field**
+    barcode_number = fuzzy_match(extracted_text, [r"^(\d+/\d+)"])  # First number
+    igp_number = fuzzy_match(extracted_text, [r"IGP[#:\s]*([\d-]+)", r"IGP\s*(\d+-\d+-\d+-\d+)",r"[1I]G[PR][#:\s]*([\d-]+)"])
+    roll_number = fuzzy_match(extracted_text, [r"Roll[#:\s]*(\d+)",r"R[o0]l[#:\s]*(\d+)"])
+    meters = fuzzy_match(extracted_text, [r"METER[S]?:?\s*(\d+)"])
+    cotton = fuzzy_match(extracted_text, [r"(\d+)%\s*Cotton"])
+    spandex = fuzzy_match(extracted_text, [r"(\d+)%\s*SPANDEX"])
+    dimensions = fuzzy_match(extracted_text, [r"(\d+x\d+\s*\d+”?)"])
+    #weave = fuzzy_match(extracted_text, [r"(DO8BY\s*LENO)"])
+    weave_match = re.search(r'"\s*([\w\s-]+)$', extracted_text)
+    weave = weave_match.group(1).strip() if weave_match else None
+    # Fabric details extraction
+    fabric_details_match = re.search(r"\((.*?)\)", extracted_text)
+    fabric_details = fabric_details_match.group(1).split() if fabric_details_match else []
+
+    # Construct JSON response
+    response = {
+        "Barcode_Number": barcode_number,
+        "IGP_Number": igp_number,
+        "Roll_Number": int(roll_number) if roll_number and roll_number.isdigit() else None,
+        "Meters": int(meters) if meters and meters.isdigit() else None,
+        "Composition": {
+            "Cotton": f"{cotton}%" if cotton else None,
+            "Spandex": f"{spandex}%" if spandex else None
+        },
+       # "Fabric_Details": {
+        #    "CD": fabric_details[0] if len(fabric_details) > 0 else None,
+        #    "CM": fabric_details[1] if len(fabric_details) > 1 else None,
+        #    "40D": "40D" in extracted_text
+        #},
+        "Dimensions": dimensions,
+        "Weave": weave
+        #"QR_Code": "Detected"  # Placeholder for QR detection
+    }
+
+    # Remove keys with None values
+    response = {k: v for k, v in response.items() if v is not None}
+    print(extracted_text)
+
+    return response  # Return as JSON object, not a string
+
+
+def ocr_paddleocr1(image):
     
     
     #barcode_image, bbox = get_barcode_area(image)
