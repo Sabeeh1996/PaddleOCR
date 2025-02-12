@@ -580,7 +580,7 @@ def correct_perspective(image_path, output_size=(400, 200)):
 
 
 
-def detect_qr_barcode(image):
+def detect_qr_barcode1(image):
     """Detects QR codes and barcodes in an image, drawing bounding boxes without requiring 4 points."""
     decoded_objects = decode(image, symbols=[ZBarSymbol.QRCODE, ZBarSymbol.EAN13, ZBarSymbol.EAN8, ZBarSymbol.CODE128, ZBarSymbol.CODE39])
     detected_codes = []
@@ -607,8 +607,44 @@ def detect_qr_barcode(image):
     return detected_codes, image
 
 
+def detect_qr_barcode(image):
+    """Detects QR codes and barcodes in an image using multiple methods."""
+    detected_codes = []
 
+    # Preprocess the image (convert to grayscale and apply threshold)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    enhanced = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
 
+    # Approach 1: OpenCV QRCodeDetector
+    qr_code_detector = cv2.QRCodeDetector()
+    data, bbox, _ = qr_code_detector.detectAndDecode(enhanced)
+
+    if bbox is not None and data:
+        detected_codes.append(data)
+        bbox = bbox.astype(int)
+        for i in range(len(bbox)):
+            cv2.line(image, tuple(bbox[i][0]), tuple(bbox[(i + 1) % len(bbox)][0]), (0, 255, 0), 2)
+        cv2.putText(image, data, (bbox[0][0][0], bbox[0][0][1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+    # Approach 2: pyzbar
+    try:
+        decoded_objects = decode(image)  # Try directly on the original image
+        if not decoded_objects:
+            decoded_objects = decode(enhanced)  # Try again on enhanced version
+
+        for obj in decoded_objects:
+            points = obj.polygon
+            if len(points) == 4:
+                pts = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
+                cv2.polylines(image, [pts], True, (255, 0, 0), 2)
+
+            detected_codes.append(obj.data.decode('utf-8'))
+            cv2.putText(image, obj.data.decode('utf-8'), (obj.rect.left, obj.rect.top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+    except Exception as e:
+        print(f"pyzbar failed: {e}")
+
+    return list(set(detected_codes)), image  # Remove duplicates
 
 from fuzzywuzzy import process  # For fuzzy text matching
 
@@ -665,12 +701,13 @@ def ocr_paddleocr(image):
         str: JSON response containing structured fabric label information.
     """
     # Convert to grayscale if needed
+    detected_codes, image_with_boxes = detect_qr_barcode(image)
     if len(image.shape) == 3 and image.shape[2] == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray = image  # Already grayscale
-
-    # Initialize PaddleOCR
+        
+    
     ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
     result = ocr.ocr(gray)
 
@@ -686,19 +723,19 @@ def ocr_paddleocr(image):
     extracted_text = " ".join(extracted_text).strip()
 
     # Debugging: Print extracted text
-    print("Extracted Text:", extracted_text)
+    print("Extracted Text:", detected_codes)
 
     weave_patterns = [
     "DO8BY LENO", "TWILL", "SATIN", "PLAIN WEAVE", "HERRINGBONE", "BASKET WEAVE"
     ]
 
     # **Regex + Fuzzy Matching for Each Field**
-    barcode_number = fuzzy_match(extracted_text, [r"^(\d+/\d+)"])  # First number
+    barcode_number = fuzzy_match(extracted_text, [r"^(\d+/\d+)",r"^(\d{10}/\d{4})",r"^(\d+)\b"])  # First number
     igp_number = fuzzy_match(extracted_text, [r"IGP[#:\s]*([\d-]+)", r"IGP\s*(\d+-\d+-\d+-\d+)",r"[1I]G[PR][#:\s]*([\d-]+)"])
-    roll_number = fuzzy_match(extracted_text, [r"Roll[#:\s]*(\d+)",r"R[o0]l[#:\s]*(\d+)"])
+    roll_number = fuzzy_match(extracted_text, [r"Roll[#:\s]*(\d+)",r"R[o0]l[#:\s]*(\d+)",r"Ro[il][li][#:\s]*(\d+)"])
     meters = fuzzy_match(extracted_text, [r"METER[S]?:?\s*(\d+)"])
     cotton = fuzzy_match(extracted_text, [r"(\d+)%\s*Cotton"])
-    spandex = fuzzy_match(extracted_text, [r"(\d+)%\s*SPANDEX"])
+    spandex = fuzzy_match(extracted_text, [r"(\d+)%\s*SPANDEX",r"(\d+)%\s*SPANEX"])
     dimensions = fuzzy_match(extracted_text, [r"(\d+x\d+\s*\d+”?)"])
     #weave = fuzzy_match(extracted_text, [r"(DO8BY\s*LENO)"])
     weave_match = re.search(r'"\s*([\w\s-]+)$', extracted_text)
