@@ -627,39 +627,7 @@ def fuzzy_extract(text, keywords, threshold=80):
     best_match, score = process.extractOne(text, keywords)
     return best_match if score >= threshold else None
 
-def ocr_paddleocr(image):
-    """
-    Perform OCR on the given image using PaddleOCR and structure the extracted information into a JSON response.
 
-    Args:
-        image (numpy.ndarray): The input image.
-
-    Returns:
-        dict: JSON response containing structured fabric label information.
-    """
-    # Convert to grayscale if needed
-    if len(image.shape) == 3 and image.shape[2] == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image  # Already grayscale
-
-    # Initialize PaddleOCR
-    ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
-    result = ocr.ocr(gray)
-
-    # Extract text from OCR result
-    extracted_text = []
-    if result:
-        for line in result:
-            for word_info in line:
-                if len(word_info) > 1:
-                    extracted_text.append(word_info[1][0])
-
-    # Join extracted text into a single string
-    extracted_text = " ".join(extracted_text).strip()
-
-    # Debugging: Print extracted text
-    print("Extracted Text:", extracted_text)
 
 
 from fuzzywuzzy import process
@@ -741,6 +709,7 @@ def ocr_paddleocr(image):
 
     # Construct JSON response
     response = {
+        "Plain_text": extracted_text,
         "Barcode_Number": barcode_number,
         "IGP_Number": igp_number,
         "Roll_Number": int(roll_number) if roll_number and roll_number.isdigit() else None,
