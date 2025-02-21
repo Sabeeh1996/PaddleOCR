@@ -22,7 +22,7 @@ CONFIG = {
     'min_text_length': 3,
     'min_confidence': 0.70,
     'similarity_threshold': 0.7,
-    'angles': [90, 180],
+    'angles': [90, 270],
     'show_preview': True,
     'preview_size': (400, 400),
     'qr_scan_attempts': 2  # Number of different preprocessing attempts for QR
