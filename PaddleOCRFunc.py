@@ -1,5 +1,3 @@
-
-
 from paddleocr import PaddleOCR
 import json
 import numpy as np
@@ -12,7 +10,7 @@ import matplotlib.pyplot as plt
 from functools import lru_cache
 import gc
 from pyzbar.pyzbar import decode as pyzbar_decode
-from ultralytics import YOLO
+import onnxruntime
 
 ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, enable_mkldnn=True)
 QR_DETECTOR = cv2.QRCodeDetector()  # OpenCV QR detector
@@ -106,34 +104,113 @@ def detect_qr_code(image_cv):
 
     return None
 
-def detect_barcode(img_file):
-    model = YOLO(r'best.pt')
-    image = cv2.imread(image_path)
-
-    # Run YOLO prediction
-    results = model.predict(image_path)
-    for result_idx, result in enumerate(results):
-        boxes = result.boxes  # Contains the boxes, confidences, and class IDs
+def run_detection(image_path):
+    conf_threshold=0.5
+    nms_threshold=0.5
+    onnx_model_path = r"best.onnx"
+    # Helper function: letterbox resize with padding
+    def letterbox(image, target_size):
+        h, w = image.shape[:2]
+        th, tw = target_size
+        ratio = min(th / h, tw / w)
+        new_h = int(h * ratio)
+        new_w = int(w * ratio)
+        resized = cv2.resize(image, (new_w, new_h))
+        new_image = np.full((th, tw, 3), 114, dtype=np.uint8)
+        pad_h = (th - new_h) // 2
+        pad_w = (tw - new_w) // 2
+        new_image[pad_h:pad_h + new_h, pad_w:pad_w + new_w] = resized
+        return new_image, ratio, (pad_w, pad_h)
     
-        for box_idx, box in enumerate(boxes):
-            x1, y1, x2, y2 = map(int, box.xyxy[0])  # Box coordinates
-            confidence = box.conf[0]  # Confidence score
-            class_id = box.cls[0]  # Class ID
-            
-            print(f'Class: {class_id}, Confidence: {confidence:.2f}, Box: ({x1}, {y1}, {x2}, {y2})')
-            
-            # Crop the detected object
-            cropped_image = image[y1:y2, x1:x2]
+    # Load the ONNX model and retrieve input shape information
+    session = onnxruntime.InferenceSession(onnx_model_path)
+    input_name = session.get_inputs()[0].name
+    input_shape = session.get_inputs()[0].shape
+    input_height, input_width = input_shape[2], input_shape[3]
+    
+    # Load and preprocess the image
+    #image = cv2.imread(image_path)
+    image = image_path
+    if image is None:
+        print("Error: Could not load image.")
+        return
+    original_image = image.copy()
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    resized_img, ratio, (pad_w, pad_h) = letterbox(image_rgb, (input_height, input_width))
+    resized_img = resized_img.astype(np.float32) / 255.0  # Normalize
+    input_tensor = resized_img.transpose(2, 0, 1)[np.newaxis, ...]  # Add batch dimension
 
-            # Convert BGR (OpenCV) to RGB (Matplotlib uses RGB)
-            cropped_image_rgb = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
-            ocr_paddleocr(cropped_image_rgb)
-            # Display cropped image using matplotlib
-            plt.figure(figsize=(4, 4))
-            plt.imshow(cropped_image_rgb)
-            plt.title(f'Class: {int(class_id)}, Conf: {confidence:.2f}')
-            plt.axis('off')
-            plt.show()
+    # Run inference on the preprocessed image
+    outputs = session.run(None, {input_name: input_tensor})
+    output = outputs[0]
+
+    # Adjust output shape if needed (assuming model output shape is [1, 84, num_detections])
+    output = output.transpose(0, 2, 1)[0]  # Now shape: (num_detections, 84)
+    boxes = output[:, :4]  # [x_center, y_center, w, h]
+    scores = output[:, 4:]  # Class probabilities
+
+    # Compute detection confidence and class IDs
+    confidences = np.max(scores, axis=1)
+    class_ids = np.argmax(scores, axis=1)
+    
+    # Filter out detections with low confidence
+    mask = confidences > conf_threshold
+    boxes = boxes[mask]
+    confidences = confidences[mask]
+    class_ids = class_ids[mask]
+    
+    if boxes.shape[0] == 0:
+        print("No detections found.")
+        return
+
+    # Convert from center (x, y, w, h) to corner coordinates (x1, y1, x2, y2)
+    x_center = boxes[:, 0]
+    y_center = boxes[:, 1]
+    w = boxes[:, 2]
+    h = boxes[:, 3]
+    x1 = x_center - w / 2
+    y1 = y_center - h / 2
+    x2 = x_center + w / 2
+    y2 = y_center + h / 2
+
+    # Adjust coordinates to remove letterbox padding and scale back to original image dimensions
+    x1 = (x1 - pad_w) / ratio
+    y1 = (y1 - pad_h) / ratio
+    x2 = (x2 - pad_w) / ratio
+    y2 = (y2 - pad_h) / ratio
+
+    # Clip coordinates so they remain within image boundaries
+    x1 = np.clip(x1, 0, original_image.shape[1])
+    y1 = np.clip(y1, 0, original_image.shape[0])
+    x2 = np.clip(x2, 0, original_image.shape[1])
+    y2 = np.clip(y2, 0, original_image.shape[0])
+    
+    # Prepare boxes in [x, y, w, h] format for NMS
+    boxes_xywh = np.column_stack([x1, y1, x2 - x1, y2 - y1])
+    indices = cv2.dnn.NMSBoxes(boxes_xywh.tolist(), confidences.tolist(), conf_threshold, nms_threshold)
+    
+    if len(indices) > 0:
+        indices = indices.flatten()
+        final_boxes = np.column_stack([x1, y1, x2, y2])[indices]
+        final_confidences = confidences[indices]
+        final_class_ids = class_ids[indices]
+
+        # Loop through final detections and display each result
+        for box, confidence, class_id in zip(final_boxes, final_confidences, final_class_ids):
+            x1_disp, y1_disp, x2_disp, y2_disp = map(int, box)
+            print(f'Class: {class_id}, Confidence: {confidence:.2f}, Box: ({x1_disp}, {y1_disp}, {x2_disp}, {y2_disp})')
+            
+            # Crop and display detection on the original image
+            cropped = original_image[y1_disp:y2_disp, x1_disp:x2_disp]
+            cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+           # plt.figure(figsize=(4, 4))
+           # plt.imshow(cropped_rgb)
+            return cropped_rgb
+           # plt.title(f'Class: {int(class_id)}, Conf: {confidence:.2f}')
+            #plt.axis('off')
+            #plt.show()
+    else:
+        print("No detections after NMS")
         
 def ocr_paddleocr(img_file):
     
