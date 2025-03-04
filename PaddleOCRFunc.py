@@ -1,6 +1,4 @@
 
-import matplotlib.pyplot as plt
-import os
 
 from paddleocr import PaddleOCR
 import json
@@ -14,6 +12,7 @@ import matplotlib.pyplot as plt
 from functools import lru_cache
 import gc
 from pyzbar.pyzbar import decode as pyzbar_decode
+from ultralytics import YOLO
 
 ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, enable_mkldnn=True)
 QR_DETECTOR = cv2.QRCodeDetector()  # OpenCV QR detector
@@ -114,27 +113,27 @@ def detect_barcode(img_file):
     # Run YOLO prediction
     results = model.predict(image_path)
     for result_idx, result in enumerate(results):
-    boxes = result.boxes  # Contains the boxes, confidences, and class IDs
+        boxes = result.boxes  # Contains the boxes, confidences, and class IDs
     
-    for box_idx, box in enumerate(boxes):
-        x1, y1, x2, y2 = map(int, box.xyxy[0])  # Box coordinates
-        confidence = box.conf[0]  # Confidence score
-        class_id = box.cls[0]  # Class ID
-        
-        print(f'Class: {class_id}, Confidence: {confidence:.2f}, Box: ({x1}, {y1}, {x2}, {y2})')
-        
-        # Crop the detected object
-        cropped_image = image[y1:y2, x1:x2]
+        for box_idx, box in enumerate(boxes):
+            x1, y1, x2, y2 = map(int, box.xyxy[0])  # Box coordinates
+            confidence = box.conf[0]  # Confidence score
+            class_id = box.cls[0]  # Class ID
+            
+            print(f'Class: {class_id}, Confidence: {confidence:.2f}, Box: ({x1}, {y1}, {x2}, {y2})')
+            
+            # Crop the detected object
+            cropped_image = image[y1:y2, x1:x2]
 
-        # Convert BGR (OpenCV) to RGB (Matplotlib uses RGB)
-        cropped_image_rgb = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
-        ocr_paddleocr(cropped_image_rgb)
-        # Display cropped image using matplotlib
-        plt.figure(figsize=(4, 4))
-        plt.imshow(cropped_image_rgb)
-        plt.title(f'Class: {int(class_id)}, Conf: {confidence:.2f}')
-        plt.axis('off')
-        plt.show()
+            # Convert BGR (OpenCV) to RGB (Matplotlib uses RGB)
+            cropped_image_rgb = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
+            ocr_paddleocr(cropped_image_rgb)
+            # Display cropped image using matplotlib
+            plt.figure(figsize=(4, 4))
+            plt.imshow(cropped_image_rgb)
+            plt.title(f'Class: {int(class_id)}, Conf: {confidence:.2f}')
+            plt.axis('off')
+            plt.show()
         
 def ocr_paddleocr(img_file):
     
