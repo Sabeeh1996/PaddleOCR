@@ -106,7 +106,36 @@ def detect_qr_code(image_cv):
             return qr_data
 
     return None
+
+def detect_barcode(img_file):
+    model = YOLO(r'best.pt')
+    image = cv2.imread(image_path)
+
+    # Run YOLO prediction
+    results = model.predict(image_path)
+    for result_idx, result in enumerate(results):
+    boxes = result.boxes  # Contains the boxes, confidences, and class IDs
     
+    for box_idx, box in enumerate(boxes):
+        x1, y1, x2, y2 = map(int, box.xyxy[0])  # Box coordinates
+        confidence = box.conf[0]  # Confidence score
+        class_id = box.cls[0]  # Class ID
+        
+        print(f'Class: {class_id}, Confidence: {confidence:.2f}, Box: ({x1}, {y1}, {x2}, {y2})')
+        
+        # Crop the detected object
+        cropped_image = image[y1:y2, x1:x2]
+
+        # Convert BGR (OpenCV) to RGB (Matplotlib uses RGB)
+        cropped_image_rgb = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
+        ocr_paddleocr(cropped_image_rgb)
+        # Display cropped image using matplotlib
+        plt.figure(figsize=(4, 4))
+        plt.imshow(cropped_image_rgb)
+        plt.title(f'Class: {int(class_id)}, Conf: {confidence:.2f}')
+        plt.axis('off')
+        plt.show()
+        
 def ocr_paddleocr(img_file):
     
     rotated_list = []

@@ -18,7 +18,7 @@ async def process_image_endpoint(OCR_input_image: UploadFile = File(None)):
         image = cv2.imdecode(np_image, cv2.IMREAD_COLOR)
         if image is None:
             raise HTTPException(status_code=400, detail="Invalid image file")
-        barcodes = PaddleOCRFunc.ocr_paddleocr(image)
+        barcodes = PaddleOCRFunc.detect_barcode(image)
 
         return barcodes
 
