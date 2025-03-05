@@ -19,7 +19,7 @@ CONFIG = {
     'min_text_length': 3,
     'min_confidence': 0.70,
     'similarity_threshold': 0.7,
-    'angles': [90, 270],
+    'angles': [90,180, 270],
     'show_preview': True,
     'preview_size': (400, 400),
     'qr_scan_attempts': 2  # Number of different preprocessing attempts for QR
@@ -105,8 +105,8 @@ def detect_qr_code(image_cv):
     return None
 
 def run_detection(image_path):
-    conf_threshold=0.5
-    nms_threshold=0.5
+    conf_threshold=0.3
+    nms_threshold=0.3
     onnx_model_path = r"best.onnx"
     # Helper function: letterbox resize with padding
     def letterbox(image, target_size):
@@ -158,10 +158,10 @@ def run_detection(image_path):
     boxes = boxes[mask]
     confidences = confidences[mask]
     class_ids = class_ids[mask]
-    
+    cropped_rgb = None
     if boxes.shape[0] == 0:
         print("No detections found.")
-        return
+        return cropped_rgb,1
 
     # Convert from center (x, y, w, h) to corner coordinates (x1, y1, x2, y2)
     x_center = boxes[:, 0]
@@ -205,7 +205,7 @@ def run_detection(image_path):
             cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
            # plt.figure(figsize=(4, 4))
            # plt.imshow(cropped_rgb)
-            return cropped_rgb
+            return cropped_rgb,2
            # plt.title(f'Class: {int(class_id)}, Conf: {confidence:.2f}')
             #plt.axis('off')
             #plt.show()
@@ -273,7 +273,7 @@ def ocr_paddleocr(img_file):
 
     if not all_texts:
         print("No text found in any rotation")
-        return
+       # return
         
     del rotated_list, pil_img
     
@@ -305,6 +305,7 @@ def ocr_paddleocr(img_file):
     if extracted_barcode is None and qr_data is not None:
         extracted_barcode = qr_data
     gc.collect()
+   # print("response",response)
     response = {
         "Plain_text": extracted_text,
         "Barcode_Number": extracted_barcode,
