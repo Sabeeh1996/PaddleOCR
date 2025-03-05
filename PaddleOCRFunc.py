@@ -105,8 +105,8 @@ def detect_qr_code(image_cv):
     return None
 
 def run_detection(image_path):
-    conf_threshold=0.3
-    nms_threshold=0.3
+    conf_threshold=0.2
+    nms_threshold=0.2
     onnx_model_path = r"best.onnx"
     # Helper function: letterbox resize with padding
     def letterbox(image, target_size):
