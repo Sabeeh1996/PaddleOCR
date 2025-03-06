@@ -4,8 +4,17 @@ import cv2
 import PaddleOCRFunc
 from typing import List
 import gc
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can restrict this to specific origins (like ["http://localhost:3000"])
+    allow_credentials=True,
+    allow_methods=["*"],  # You can restrict this to ["POST", "GET"] if needed
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def home():
