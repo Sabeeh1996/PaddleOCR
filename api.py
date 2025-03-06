@@ -55,6 +55,40 @@ async def process_image_endpoint1(OCR_input_image: UploadFile = File(None)):
         
 
 
+@app.post("/process-image")
+async def process_images_endpoint(OCR_input_image: List[UploadFile] = File(...)):
+    try:
+        results = []
+        
+        for OCR_input_images in OCR_input_image:
+            contents = await OCR_input_images.read()
+            np_image = np.frombuffer(contents, np.uint8)
+            image = cv2.imdecode(np_image, cv2.IMREAD_COLOR)
+            
+            if image is None:
+                raise HTTPException(status_code=400, detail=f"Invalid image file: {OCR_input_images.filename}")
+            
+            returnimg, box = PaddleOCRFunc.run_detection(image)
+            
+            if box == 1:
+                barcodes = PaddleOCRFunc.ocr_paddleocr(image)
+            else:
+                barcodes = PaddleOCRFunc.ocr_paddleocr(returnimg)
+
+            results.append({
+               # "filename": OCR_input_image.filename,
+                "barcodes": barcodes
+            })
+
+        return {"results": results}
+        del results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
+        
+
+
+
+
 def process_single_image(image_path):
     """This is the wrapper for parallel processing, it handles one image."""
     try:
