@@ -109,156 +109,130 @@ def detect_qr_code(image_cv):
 
     return None
 
-def run_detection(image_path):
-    conf_threshold=0.2
-    nms_threshold=0.2
+def letterbox(image, target_size):
+    """Resize image with padding to fit model input size."""
+    h, w = image.shape[:2]
+    th, tw = target_size
+    ratio = min(th / h, tw / w)
+    new_h, new_w = int(h * ratio), int(w * ratio)
+    resized = cv2.resize(image, (new_w, new_h))
+    padded_image = np.full((th, tw, 3), 114, dtype=np.uint8)
+    pad_h, pad_w = (th - new_h) // 2, (tw - new_w) // 2
+    padded_image[pad_h:pad_h + new_h, pad_w:pad_w + new_w] = resized
+    return padded_image, ratio, (pad_w, pad_h)
 
-    # Helper function: letterbox resize with padding
-    def letterbox(image, target_size):
-        h, w = image.shape[:2]
-        th, tw = target_size
-        ratio = min(th / h, tw / w)
-        new_h = int(h * ratio)
-        new_w = int(w * ratio)
-        resized = cv2.resize(image, (new_w, new_h))
-        new_image = np.full((th, tw, 3), 114, dtype=np.uint8)
-        pad_h = (th - new_h) // 2
-        pad_w = (tw - new_w) // 2
-        new_image[pad_h:pad_h + new_h, pad_w:pad_w + new_w] = resized
-        return new_image, ratio, (pad_w, pad_h)
-    
+def convert_boxes(boxes, ratio, pad_w, pad_h, original_shape):
+    """Convert boxes from center format to original image coordinates."""
+    x_center, y_center, w, h = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+    x1, y1 = (x_center - w / 2 - pad_w) / ratio, (y_center - h / 2 - pad_h) / ratio
+    x2, y2 = (x_center + w / 2 - pad_w) / ratio, (y_center + h / 2 - pad_h) / ratio
 
-    
-    # Load and preprocess the image
-    #image = cv2.imread(image_path)
-    image = image_path
-    if image is None:
-        print("Error: Could not load image.")
-        return
+    # Clip boxes to image size
+    x1, y1 = np.clip(x1, 0, original_shape[1]), np.clip(y1, 0, original_shape[0])
+    x2, y2 = np.clip(x2, 0, original_shape[1]), np.clip(y2, 0, original_shape[0])
+
+    return np.column_stack([x1, y1, x2, y2])
+
+def run_detection(image):
+    CONF_THRESHOLD=0.2
+    NMS_THRESHOLD=0.2
+
+    """Runs YOLO detection on an input image."""
     original_image = image.copy()
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     resized_img, ratio, (pad_w, pad_h) = letterbox(image_rgb, (input_height, input_width))
-    resized_img = resized_img.astype(np.float32) / 255.0  # Normalize
-    input_tensor = resized_img.transpose(2, 0, 1)[np.newaxis, ...]  # Add batch dimension
 
-    # Run inference on the preprocessed image
+    input_tensor = resized_img.astype(np.float32) / 255.0
+    input_tensor = input_tensor.transpose(2, 0, 1)[np.newaxis, ...]
+
+    # Run inference
     outputs = session.run(None, {input_name: input_tensor})
-    output = outputs[0]
+    output = outputs[0].transpose(0, 2, 1)[0]  # Shape: (num_detections, 84)
 
-    # Adjust output shape if needed (assuming model output shape is [1, 84, num_detections])
-    output = output.transpose(0, 2, 1)[0]  # Now shape: (num_detections, 84)
-    boxes = output[:, :4]  # [x_center, y_center, w, h]
-    scores = output[:, 4:]  # Class probabilities
+    boxes, scores = output[:, :4], output[:, 4:]
+    confidences, class_ids = np.max(scores, axis=1), np.argmax(scores, axis=1)
 
-    # Compute detection confidence and class IDs
-    confidences = np.max(scores, axis=1)
-    class_ids = np.argmax(scores, axis=1)
-    
-    # Filter out detections with low confidence
-    mask = confidences > conf_threshold
-    boxes = boxes[mask]
-    confidences = confidences[mask]
-    class_ids = class_ids[mask]
-    cropped_rgb = None
-    if boxes.shape[0] == 0:
+    mask = confidences > CONF_THRESHOLD
+    if not np.any(mask):
         print("No detections found.")
-        return cropped_rgb,1
+        return None, 1
 
-    # Convert from center (x, y, w, h) to corner coordinates (x1, y1, x2, y2)
-    x_center = boxes[:, 0]
-    y_center = boxes[:, 1]
-    w = boxes[:, 2]
-    h = boxes[:, 3]
-    x1 = x_center - w / 2
-    y1 = y_center - h / 2
-    x2 = x_center + w / 2
-    y2 = y_center + h / 2
+    boxes, confidences, class_ids = boxes[mask], confidences[mask], class_ids[mask]
 
-    # Adjust coordinates to remove letterbox padding and scale back to original image dimensions
-    x1 = (x1 - pad_w) / ratio
-    y1 = (y1 - pad_h) / ratio
-    x2 = (x2 - pad_w) / ratio
-    y2 = (y2 - pad_h) / ratio
+    # Convert boxes to image coordinates
+    boxes_xyxy = convert_boxes(boxes, ratio, pad_w, pad_h, original_image.shape)
 
-    # Clip coordinates so they remain within image boundaries
-    x1 = np.clip(x1, 0, original_image.shape[1])
-    y1 = np.clip(y1, 0, original_image.shape[0])
-    x2 = np.clip(x2, 0, original_image.shape[1])
-    y2 = np.clip(y2, 0, original_image.shape[0])
-    
-    # Prepare boxes in [x, y, w, h] format for NMS
-    boxes_xywh = np.column_stack([x1, y1, x2 - x1, y2 - y1])
-    indices = cv2.dnn.NMSBoxes(boxes_xywh.tolist(), confidences.tolist(), conf_threshold, nms_threshold)
-    
-    if len(indices) > 0:
-        indices = indices.flatten()
-        final_boxes = np.column_stack([x1, y1, x2, y2])[indices]
-        final_confidences = confidences[indices]
-        final_class_ids = class_ids[indices]
+    # Apply NMS
+    indices = cv2.dnn.NMSBoxes(boxes_xyxy.tolist(), confidences.tolist(), CONF_THRESHOLD, NMS_THRESHOLD)
 
-        # Loop through final detections and display each result
-        for box, confidence, class_id in zip(final_boxes, final_confidences, final_class_ids):
-            x1_disp, y1_disp, x2_disp, y2_disp = map(int, box)
-            print(f'Class: {class_id}, Confidence: {confidence:.2f}, Box: ({x1_disp}, {y1_disp}, {x2_disp}, {y2_disp})')
-            
-            # Crop and display detection on the original image
-            cropped = original_image[y1_disp:y2_disp, x1_disp:x2_disp]
-            cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
-           # plt.figure(figsize=(4, 4))
-           # plt.imshow(cropped_rgb)
-            return cropped_rgb,2
-           # plt.title(f'Class: {int(class_id)}, Conf: {confidence:.2f}')
-            #plt.axis('off')
-            #plt.show()
-    else:
-        print("No detections after NMS")
+    if len(indices) == 0:
+        print("No detections after NMS.")
+        return None, 1
+
+    indices = indices.flatten()
+
+    for idx in indices:
+        x1, y1, x2, y2 = map(int, boxes_xyxy[idx])
+        class_id, confidence = class_ids[idx], confidences[idx]
+        print(f"Class: {class_id}, Confidence: {confidence:.2f}, Box: ({x1}, {y1}, {x2}, {y2})")
+
+        cropped = original_image[y1:y2, x1:x2]
+        cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+        return cropped_rgb, 2  # Return the first detected object
+
+    return None, 1  # Fallback, but should rarely hit
         
 def ocr_paddleocr(img_file):
-    
     rotated_list = []
     try:
         image_path = Image.fromarray(img_file)
-        #print(image_path)
-        #pil_img = Image.open(image_path)
         pil_img = image_path.convert('L')
         img_cv_original = np.array(pil_img)
     except Exception as e:
         print(f"Error loading image: {e}")
         return
 
+    # ✅ FIRST QR CHECK - Before rotation (Original image)
     qr_data = detect_qr_code(img_cv_original)
-    
+    if qr_data:
+        print(f"QR Code Detected in Original Image: {qr_data}")
+
+    # Preprocess for better OCR and QR
     blurred = cv2.GaussianBlur(img_cv_original, (0, 0), 1.5)
     unsharp = cv2.addWeighted(img_cv_original, 1.5, blurred, -0.5, 0)
     enhanced = cv2.convertScaleAbs(unsharp)
-    
+
     pil_img = Image.fromarray(enhanced)
     rotated_list = rotate_images_pil(pil_img, CONFIG['angles'])
-    
+
     all_texts = []
     for i, rotated_img in enumerate(rotated_list):
         try:
             rotated_cv = np.array(rotated_img)
-            
+
+            # ✅ SECONDARY QR CHECK - Only if QR was not found earlier
             if not qr_data:
                 qr_rotated = detect_qr_code(rotated_cv)
                 if qr_rotated:
                     qr_data = qr_rotated
-                    print(f"QR Code Detected at ° Rotation: {qr_data}")
-                    break
-            
+                    print(f"QR Code Detected at Rotation {CONFIG['angles'][i]}°: {qr_data}")
+                    break  # No need to check further rotations for QR if found
+
+            # OCR Process (existing)
             try:
                 result = ocr.ocr(rotated_cv, cls=True)
             except Exception as e:
-                print(f"Rotation error °: {str(e)}")
+                print(f"OCR error: {str(e)}")
                 continue
-            
+
             if not result:
                 continue
-            
-            valid_words = (word_info[1] for line in result if line 
-                           for word_info in line if word_info and len(word_info) >= 2)
-            
+
+            valid_words = (
+                word_info[1] for line in result if line 
+                for word_info in line if word_info and len(word_info) >= 2
+            )
+
             for text_data in valid_words:
                 if len(text_data) < 2:
                     continue
@@ -268,68 +242,53 @@ def ocr_paddleocr(img_file):
                         'original': text,
                         'confidence': confidence,
                     })
-                    
+
         except Exception as e:
-            print(f"Rotation error {angle}°: {str(e)}")         
+            print(f"Rotation error at {CONFIG['angles'][i]}°: {str(e)}")
 
     if not all_texts:
         print("No text found in any rotation")
-       # return
-        
+
     del rotated_list, pil_img
-    
+
     merged_results = merge_similar_texts(all_texts)
     final_output = sorted(merged_results.values(), key=lambda x: (-x['confidence'], -len(x['original'])))
     del all_texts
-    
-    #print("\nFinal Merged OCR Results:")
+
+    # Barcode and Text Extraction Logic (unchanged from your code)
     barcode_regex = re.compile(r"(\d{8,}(/?\d+)*)")
     extracted_barcode = None
-    extracted_igp_no = None
-    extracted_roll_number = None
-    extracted_meter = None
-    extracted_dimension = None
-    extracted_weave = None
-    extracted_cotton = None
-    extracted_spandex = None
-    extracted_text = None
-    
+
     for result in final_output:
         text = result['original']
         text_no_space = "".join(text.split())
         textslash = text_no_space.replace("/", "")
         if barcode_regex.fullmatch(textslash):
             extracted_barcode = text_no_space
-            if qr_data is not None:
+            if qr_data:  # Prefer QR data if available
                 extracted_barcode = qr_data
-            
-                
-    del final_output
-    if extracted_barcode is None and qr_data is not None:
-        extracted_barcode = qr_data
-    gc.collect()
-   # print("response",response)
-    response = {
-        "Plain_text": extracted_text,
-        "Barcode_Number": extracted_barcode,
-        "IGP_Number": extracted_igp_no,
-        "Roll_Number": extracted_roll_number,
-        "Meters": extracted_meter,
-        "Composition": {
-            "Cotton": extracted_cotton,
-            "Spandex": extracted_spandex
-        },
-        "Dimensions": extracted_dimension,
-        "Weave": extracted_weave
-    }
-   # print({
-    #    "Barcode_Number": extracted_barcode,
-    #    "QR_Code": qr_data
-    #})
 
-   # print(response)
- 
-    return response  # Return as JSON object, not a string
+    del final_output
+    if not extracted_barcode and qr_data:
+        extracted_barcode = qr_data
+
+    gc.collect()
+
+    response = {
+        "Plain_text": None,
+        "Barcode_Number": extracted_barcode,
+        "IGP_Number": None,
+        "Roll_Number": None,
+        "Meters": None,
+        "Composition": {
+            "Cotton": None,
+            "Spandex": None
+        },
+        "Dimensions": None,
+        "Weave": None
+    }
+
+    return response
 
 
 

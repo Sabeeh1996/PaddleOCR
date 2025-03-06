@@ -2,9 +2,13 @@ from fastapi import FastAPI,Form, UploadFile, File, HTTPException
 import numpy as np
 import cv2
 import PaddleOCRFunc
+import OptimizePaddleOCRFunc
 from typing import List
 import gc
 from fastapi.middleware.cors import CORSMiddleware
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import os
+import asyncio
 
 app = FastAPI()
 
@@ -22,7 +26,7 @@ def home():
 
 
 @app.post("/process-image1/")
-async def process_image_endpoint(OCR_input_image: UploadFile = File(None)):
+async def process_image_endpoint1(OCR_input_image: UploadFile = File(None)):
     try:
 
               
@@ -49,62 +53,60 @@ async def process_image_endpoint(OCR_input_image: UploadFile = File(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
         
-        
-@app.post("/process-image")
-async def process_images_endpoint(OCR_input_image: List[UploadFile] = File(...)):
+
+
+def process_single_image(image_path):
+    """This is the wrapper for parallel processing, it handles one image."""
     try:
-        results = []
-        
-        for OCR_input_images in OCR_input_image:
-            contents = await OCR_input_images.read()
-            np_image = np.frombuffer(contents, np.uint8)
-            image = cv2.imdecode(np_image, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                raise HTTPException(status_code=400, detail=f"Invalid image file: {OCR_input_images.filename}")
-            
-            returnimg, box = PaddleOCRFunc.run_detection(image)
-            
-            if box == 1:
-                barcodes = PaddleOCRFunc.ocr_paddleocr(image)
-            else:
-                barcodes = PaddleOCRFunc.ocr_paddleocr(returnimg)
+        image = cv2.imread(image_path)
+        if image is None:
+            return {"image_path": image_path, "error": f"Invalid image file or path"}
 
-            results.append({
-               # "filename": OCR_input_image.filename,
-                "barcodes": barcodes
-            })
+        returnimg, box = OptimizePaddleOCRFunc.run_detection(image)
 
-        return {"results": results}
-        del results
+        if box == 1:
+            barcodes = OptimizePaddleOCRFunc.ocr_paddleocr(image)
+        else:
+            barcodes = OptimizePaddleOCRFunc.ocr_paddleocr(returnimg)
+
+        return {"image_path": image_path, "barcodes": barcodes}
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
-        
+        return {"image_path": image_path, "error": str(e)}     
+                   
+ 
+
+
         
 @app.post("/process-images-from-db")
 def process_images_from_db(image_paths: List[str] = Form(...)):
     try:
         results = []
         
-        for image_path in image_paths:
-            image = cv2.imread(image_path)
+        # Safe number of workers (limit to available cores, minimum of 1)
+        total_cores = os.cpu_count() or 4  # Fallback to 4 if os.cpu_count() returns None
+        max_workers = max(1, min(total_cores - 1, 5))  # Use up to 5 workers, adjust as needed
+        print(max_workers)
+        with ProcessPoolExecutor(max_workers = max_workers) as executor:
+            futures = {executor.submit(process_single_image, path): path for path in image_paths}
 
-            if image is None:
-                raise HTTPException(status_code=400, detail=f"Invalid image file or path: {image_path}")
-
-            returnimg, box = PaddleOCRFunc.run_detection(image)
-
-            if box == 1:
-                barcodes = PaddleOCRFunc.ocr_paddleocr(image)
-            else:
-                barcodes = PaddleOCRFunc.ocr_paddleocr(returnimg)
-
-            results.append({
-                "image_path": image_path,
-                "barcodes": barcodes
-            })
+            for future in as_completed(futures):
+                try:
+                    result = future.result(timeout=30)  # Optional: timeout per image processing
+                    results.append(result)
+                except Exception as processing_error:
+                    results.append(f"Error processing {futures[future]}: {str(processing_error)}")
 
         return {"results": results}
 
+    except asyncio.CancelledError:
+        # This happens if the request is cancelled (e.g., client disconnects)
+        print("Request cancelled, cleaning up...")
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
+
+
+
+        
+        
