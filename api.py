@@ -50,7 +50,7 @@ async def process_image_endpoint(OCR_input_image: UploadFile = File(None)):
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
         
         
-@app.post("/process-image/")
+@app.post("/process-image")
 async def process_images_endpoint(OCR_input_image: List[UploadFile] = File(...)):
     try:
         results = []
@@ -81,7 +81,7 @@ async def process_images_endpoint(OCR_input_image: List[UploadFile] = File(...))
         raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
         
         
-@app.post("/process-images-from-db/")
+@app.post("/process-images-from-db")
 def process_images_from_db(image_paths: List[str] = Form(...)):
     try:
         results = []
