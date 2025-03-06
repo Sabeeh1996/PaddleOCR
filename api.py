@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI,Form, UploadFile, File, HTTPException
 import numpy as np
 import cv2
 import PaddleOCRFunc
@@ -68,5 +68,34 @@ async def process_images_endpoint(OCR_input_image: List[UploadFile] = File(...))
 
         return {"results": results}
         del results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
+        
+        
+@app.post("/process-images-from-db/")
+def process_images_from_db(image_paths: List[str] = Form(...)):
+    try:
+        results = []
+        
+        for image_path in image_paths:
+            image = cv2.imread(image_path)
+
+            if image is None:
+                raise HTTPException(status_code=400, detail=f"Invalid image file or path: {image_path}")
+
+            returnimg, box = PaddleOCRFunc.run_detection(image)
+
+            if box == 1:
+                barcodes = PaddleOCRFunc.ocr_paddleocr(image)
+            else:
+                barcodes = PaddleOCRFunc.ocr_paddleocr(returnimg)
+
+            results.append({
+                "image_path": image_path,
+                "barcodes": barcodes
+            })
+
+        return {"results": results}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
