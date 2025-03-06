@@ -277,15 +277,15 @@ def ocr_paddleocr(img_file):
     response = {
         "Plain_text": None,
         "Barcode_Number": extracted_barcode,
-        "IGP_Number": None,
-        "Roll_Number": None,
-        "Meters": None,
-        "Composition": {
-            "Cotton": None,
-            "Spandex": None
-        },
-        "Dimensions": None,
-        "Weave": None
+        #"IGP_Number": None,
+        #"Roll_Number": None,
+        #"Meters": None,
+        #"Composition": {
+         #   "Cotton": None,
+         #   "Spandex": None
+        #},
+        #"Dimensions": None,
+        #"Weave": None
     }
 
     return response

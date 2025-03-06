@@ -312,15 +312,15 @@ def ocr_paddleocr(img_file):
     response = {
         "Plain_text": extracted_text,
         "Barcode_Number": extracted_barcode,
-        "IGP_Number": extracted_igp_no,
-        "Roll_Number": extracted_roll_number,
-        "Meters": extracted_meter,
-        "Composition": {
-            "Cotton": extracted_cotton,
-            "Spandex": extracted_spandex
-        },
-        "Dimensions": extracted_dimension,
-        "Weave": extracted_weave
+        #"IGP_Number": extracted_igp_no,
+       # "Roll_Number": extracted_roll_number,
+       # "Meters": extracted_meter,
+       # "Composition": {
+       #     "Cotton": extracted_cotton,
+       #     "Spandex": extracted_spandex
+       # },
+       # "Dimensions": extracted_dimension,
+       # "Weave": extracted_weave
     }
    # print({
     #    "Barcode_Number": extracted_barcode,
