@@ -53,14 +53,14 @@ async def process_image_endpoint1(OCR_input_image: UploadFile = File(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
         
-
-
-@app.post("/process-image")
+        
+@app.post("/process-image/")
 async def process_images_endpoint(OCR_input_image: List[UploadFile] = File(...)):
     try:
         results = []
         
         for OCR_input_images in OCR_input_image:
+
             contents = await OCR_input_images.read()
             np_image = np.frombuffer(contents, np.uint8)
             image = cv2.imdecode(np_image, cv2.IMREAD_COLOR)
