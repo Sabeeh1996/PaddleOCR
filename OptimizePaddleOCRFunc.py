@@ -290,11 +290,120 @@ def ocr_paddleocr(img_file):
 
     return response
 
+"""
+def ocr_paddleocr1(img_file):
+    rotated_list = []
+    extracted_barcode = None  # Store detected barcode early
 
+    try:
+        image_path = Image.fromarray(img_file)
+        pil_img = image_path.convert('L')
+        img_cv_original = np.array(pil_img)
+    except Exception as e:
+        print(f"Error loading image: {e}")
+        return
 
+    # ✅ FIRST QR CHECK - Before rotation (Original image)
+    qr_data = detect_qr_code(img_cv_original)
+    if qr_data:
+        print(f"QR Code Detected in Original Image: {qr_data}")
+        extracted_barcode = qr_data  # Prefer QR if found
 
+    # Preprocess for better OCR and QR
+    blurred = cv2.GaussianBlur(img_cv_original, (0, 0), 1.5)
+    unsharp = cv2.addWeighted(img_cv_original, 1.5, blurred, -0.5, 0)
+    enhanced = cv2.convertScaleAbs(unsharp)
 
+    pil_img = Image.fromarray(enhanced)
+    rotated_list = rotate_images_pil(pil_img, CONFIG['angles'])
 
+    all_texts = []
+    for i, rotated_img in enumerate(rotated_list):
+        try:
+            rotated_cv = np.array(rotated_img)
+
+            # ✅ SECONDARY QR CHECK - If no QR was found earlier
+            if not qr_data:
+                qr_rotated = detect_qr_code(rotated_cv)
+                if qr_rotated:
+                    qr_data = qr_rotated
+                    print(f"QR Code Detected at Rotation {CONFIG['angles'][i]}°: {qr_data}")
+                    extracted_barcode = qr_data  # Prefer QR
+                    break  # ✅ STOP further rotation
+
+            # OCR Process
+            try:
+                result = ocr.ocr(rotated_cv, cls=True)
+            except Exception as e:
+                print(f"OCR error: {str(e)}")
+                continue
+
+            if not result:
+                continue
+
+            valid_words = (
+                word_info[1] for line in result if line 
+                for word_info in line if word_info and len(word_info) >= 2
+            )
+
+            for text_data in valid_words:
+                if len(text_data) < 2:
+                    continue
+                text, confidence = text_data[0], text_data[1]
+                if len(text) >= CONFIG['min_text_length'] and confidence >= CONFIG['min_confidence']:
+                    all_texts.append({
+                        'original': text,
+                        'confidence': confidence,
+                    })
+
+                    # ✅ STOP further rotation if barcode text is enough
+                    text_no_space = "".join(text.split()).replace("/", "")
+                    if re.fullmatch(r"(\d{8,}(/?\d+)*)", text_no_space):
+                        extracted_barcode = text_no_space
+                        print(f"✅ Barcode Found at Rotation {CONFIG['angles'][i]}°: {extracted_barcode}")
+                        break  # ✅ STOP further rotation
+
+        except Exception as e:
+            print(f"Rotation error at {CONFIG['angles'][i]}°: {str(e)}")
+
+        # ✅ Exit early if barcode is found
+        if extracted_barcode:
+            break
+
+    if not all_texts:
+        print("No text found in any rotation")
+
+    del rotated_list, pil_img
+
+    merged_results = merge_similar_texts(all_texts)
+    final_output = sorted(merged_results.values(), key=lambda x: (-x['confidence'], -len(x['original'])))
+    del all_texts
+
+    # Barcode Extraction Logic
+    if not extracted_barcode:
+        for result in final_output:
+            text = result['original']
+            text_no_space = "".join(text.split()).replace("/", "")
+            if re.fullmatch(r"(\d{8,}(/?\d+)*)", text_no_space):
+                extracted_barcode = text_no_space
+                if qr_data:  # Prefer QR data if available
+                    extracted_barcode = qr_data
+                break  # ✅ STOP searching if barcode is found
+
+    del final_output
+    if not extracted_barcode and qr_data:
+        extracted_barcode = qr_data
+
+    gc.collect()
+
+    response = {
+        "Plain_text": None,
+        "Barcode_Number": extracted_barcode,
+    }
+
+    return response
+
+"""
 
 
            

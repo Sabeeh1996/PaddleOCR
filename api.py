@@ -24,7 +24,7 @@ app.add_middleware(
 def home():
     return {"message": "API is running!"}
 
-
+"""
 @app.post("/process-image1/")
 async def process_image_endpoint1(OCR_input_image: UploadFile = File(None)):
     try:
@@ -52,7 +52,7 @@ async def process_image_endpoint1(OCR_input_image: UploadFile = File(None)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
-        
+  """      
         
 @app.post("/process-image/")
 async def process_images_endpoint(OCR_input_image: List[UploadFile] = File(...)):
@@ -94,20 +94,21 @@ def process_single_image(image_path):
     try:
         image = cv2.imread(image_path)
         if image is None:
-            return {"image_path": image_path, "error": f"Invalid image file or path"}
+            return {"image_path": image_path, "error": "Invalid image file or path"}
 
         returnimg, box = OptimizePaddleOCRFunc.run_detection(image)
 
         if box == 2:
             barcodes = OptimizePaddleOCRFunc.ocr_paddleocr(returnimg)
-        #else:
-         #   barcodes = OptimizePaddleOCRFunc.ocr_paddleocr(returnimg)
-
+        else:
+            barcodes = {
+                "Plain_text": None,
+                "Barcode_Number": None
+            }
         return {"image_path": image_path, "barcodes": barcodes}
 
     except Exception as e:
-        return {"image_path": image_path, "error": str(e)}     
-                   
+        return {"image_path": image_path, "error": str(e)}
  
 
 
@@ -141,6 +142,37 @@ def process_images_from_db(image_paths: List[str] = Form(...)):
         raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}")
 
 
+#@app.post("/process-images-from-db1")
+#async def process_images_from_db(payload: dict):
+#    try:
+#        image_paths = payload.get("image_paths", [])
+#        if not image_paths:
+ #           raise HTTPException(status_code=400, detail="No image paths provided")
 
+  #      results = []
+  #      total_cores = os.cpu_count() or 4  # Get system cores, fallback to 4
+  #      max_workers = max(1, min(total_cores - 1, 5))  # Use up to 5 threads
+
+  #      batch_size = 10  # Adjust batch size as needed
+  #      image_batches = [image_paths[i:i + batch_size] for i in range(0, len(image_paths), batch_size)]
+
+  #      for batch in image_batches:
+  #          with ThreadPoolExecutor(max_workers=max_workers) as executor:
+   #             futures = {executor.submit(process_single_image, path): path for path in batch}
+#
+   #             for future in as_completed(futures):
+  #                  try:
+  #                      result = future.result(timeout=30)  # Timeout for each task
+  #                      results.append(result)
+   #                 except Exception as processing_error:
+    #                    results.append(f"Error processing {futures[future]}: {str(processing_error)}")
+#3
+   #     return {"results": results}
+
+   # except asyncio.CancelledError:
+  #      print("Request cancelled, cleaning up...")
+  #      raise
+  #  except Exception as e:
+   #     raise HTTPException(status_code=500, detail=f"Error processing images: {str(e)}") 
         
         
