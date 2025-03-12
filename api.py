@@ -98,10 +98,10 @@ def process_single_image(image_path):
 
         returnimg, box = OptimizePaddleOCRFunc.run_detection(image)
 
-        if box == 1:
-            barcodes = OptimizePaddleOCRFunc.ocr_paddleocr(image)
-        else:
+        if box == 2:
             barcodes = OptimizePaddleOCRFunc.ocr_paddleocr(returnimg)
+        #else:
+         #   barcodes = OptimizePaddleOCRFunc.ocr_paddleocr(returnimg)
 
         return {"image_path": image_path, "barcodes": barcodes}
 
